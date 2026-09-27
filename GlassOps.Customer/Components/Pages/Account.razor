@@ -1,0 +1,232 @@
+﻿@page "/account"
+
+@inject CustomerSessionService Session
+@inject NavigationManager Navigation
+@inject CustomerApiService Api
+
+<PageTitle>Account</PageTitle>
+
+<div class="account-page">
+
+    <div class="account-header">
+        <button class="back-button"
+                @onclick="GoBack"
+                title="Back">
+            <i class="bi bi-arrow-left"></i>
+        </button>
+
+        <h3>My Account</h3>
+    </div>
+
+    <div class="account-card">
+
+        <div class="account-avatar">
+            @Initials
+        </div>
+
+        <h4>@Session.CustomerName</h4>
+
+        @if (CustomerAccount != null)
+        {
+            <div class="account-details">
+
+                <div class="account-row">
+                    <span class="account-label">Email</span>
+                    <span class="account-value">@CustomerAccount.Email</span>
+                </div>
+
+                <div class="account-row">
+                    <span class="account-label">Address</span>
+
+                    <span class="account-value">
+                        @CustomerAccount.AddressLine1
+
+                        @if (!string.IsNullOrWhiteSpace(CustomerAccount.AddressLine2))
+                        {
+                            <br />
+                            @CustomerAccount.AddressLine2
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(CustomerAccount.Town))
+                        {
+                            <br />
+                            @CustomerAccount.Town
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(CustomerAccount.Postcode))
+                        {
+                            <br />
+                            @CustomerAccount.Postcode
+                        }
+                    </span>
+                </div>
+
+                <div class="account-row">
+                    <span class="account-label">Phone</span>
+                    <span class="account-value">@CustomerAccount.Phone</span>
+                </div>
+
+            </div>
+        }
+        else if (Loading)
+        {
+            <div class="text-center py-4">
+                <div class="spinner-border spinner-border-sm"></div>
+            </div>
+        }
+
+    </div>
+
+
+    <div class="account-card">
+
+        <h5>Password</h5>
+
+        <p class="text-muted">
+            Change the password you use to sign in to Glass Ops.
+        </p>
+
+        <EditForm Model="PasswordModel"
+                  OnValidSubmit="ChangePasswordAsync">
+
+            <DataAnnotationsValidator />
+
+            <div class="mb-3">
+                <label class="form-label">
+                    Current password
+                </label>
+
+                <input type="text"
+                       class="form-control"
+                       @bind="PasswordModel.CurrentPassword"
+                       autocomplete="off" />
+
+                <ValidationMessage For="@(() => PasswordModel.CurrentPassword)" />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">
+                    New password
+                </label>
+
+                <input type="text"
+                       class="form-control"
+                       @bind="PasswordModel.NewPassword"
+                       autocomplete="off" />
+
+                <ValidationMessage For="@(() => PasswordModel.NewPassword)" />
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(Message))
+            {
+                <div class="alert @(Success ? "alert-success" : "alert-danger")">
+                    @Message
+                </div>
+            }
+
+            <button type="submit"
+                    class="btn btn-primary w-100"
+                    disabled="@Saving">
+                @if (Saving)
+                {
+                    <span>Updating...</span>
+                }
+                else
+                {
+                    <span>Change Password</span>
+                }
+            </button>
+
+        </EditForm>
+
+    </div>
+    <div class="account-card">
+
+        <button type="button"
+                class="btn btn-outline-danger w-100"
+                @onclick="SignOut">
+            <i class="bi bi-box-arrow-right me-2"></i>
+            Sign Out
+        </button>
+
+    </div>
+
+</div>
+
+@code
+{
+    private CustomerAccountDTO? CustomerAccount;
+
+    private bool Loading = true;
+    private bool Saving;
+    private bool Success;
+    private string Message = "";
+
+    private ChangePasswordModel PasswordModel = new();
+
+    private void SignOut()
+    {
+        Session.Logout();
+        Navigation.NavigateTo("/", replace: true);
+    }
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.RestoreAsync();
+
+        if (!Session.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/", replace: true);
+            return;
+        }
+
+        CustomerAccount = await Api.GetAccountAsync();
+
+        Loading = false;
+    }
+
+    private string Initials =>
+        string.Concat(
+            (Session.CustomerName ?? "Customer")
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Take(2)
+            .Select(x => char.ToUpperInvariant(x[0])));
+
+    private void GoBack()
+    {
+        Navigation.NavigateTo("/home");
+    }
+
+    private async Task ChangePasswordAsync()
+    {
+        Message = "";
+        Success = false;
+
+        Saving = true;
+
+        var result = await Api.ChangePasswordAsync(
+            PasswordModel.CurrentPassword,
+            PasswordModel.NewPassword);
+
+        Saving = false;
+
+        Success = result.Success;
+        Message = result.Message;
+
+        if (result.Success)
+        {
+            PasswordModel = new();
+        }
+    }
+
+    private sealed class ChangePasswordModel
+    {
+        [System.ComponentModel.DataAnnotations.Required]
+        public string CurrentPassword { get; set; } = "";
+
+        [System.ComponentModel.DataAnnotations.Required]
+        [System.ComponentModel.DataAnnotations.MinLength(
+            6,
+            ErrorMessage = "Password must be at least 6 characters.")]
+        public string NewPassword { get; set; } = "";
+    }
+}

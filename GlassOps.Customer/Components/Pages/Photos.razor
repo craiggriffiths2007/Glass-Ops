@@ -1,0 +1,138 @@
+@page "/photos"
+@inject CustomerSessionService Session
+@inject CustomerRepairState RepairState
+@inject CustomerApiService Api
+@inject NavigationManager Navigation
+
+@if (Loading)
+{
+    <div class="customer-page"><div class="loading-card">Loading photos…</div></div>
+}
+else if (CurrentRepair is not null)
+{
+    <div class="customer-page sub-page photos-page">
+        <div class="page-kicker">YOUR REPAIR</div>
+
+        <div class="photos-heading-row">
+            <div>
+                <h1>Photos</h1>
+                <p class="page-intro">Photos shared during your repair, from survey through to completion.</p>
+            </div>
+            <div class="photo-count-pill">@VisiblePhotos.Count photo@(VisiblePhotos.Count == 1 ? "" : "s")</div>
+        </div>
+
+        <div class="photo-filter-row" role="tablist" aria-label="Photo categories">
+            @foreach (var category in Categories)
+            {
+                <button class="photo-filter @(SelectedCategory == category ? "active" : "")"
+                        @onclick="() => SelectedCategory = category">
+                    @category
+                </button>
+            }
+        </div>
+
+        @if (VisiblePhotos.Count == 0)
+        {
+            <section class="simple-card empty-card">
+                <div class="empty-icon">▧</div>
+                <h2>No photos</h2>
+                
+            </section>
+        }
+        else
+        {
+            <div class="photo-grid">
+                @foreach (var photo in VisiblePhotos)
+                {
+                    <button class="photo-card" @onclick="() => OpenPhoto(photo)" aria-label="Open @photo.Title">
+                        <div class="photo-image-wrap">
+                            <img src="@photo.Url" alt="@photo.Title" />
+                            <div class="photo-image-shade"></div>
+                            <span class="photo-category-badge">@photo.Category</span>
+                            <span class="photo-expand-icon">↗</span>
+                        </div>
+                        <div class="photo-card-copy">
+                            <strong>@photo.Title</strong>
+                            <span>@photo.DateTime.ToString("d MMM · HH:mm")</span>
+                        </div>
+                    </button>
+                }
+            </div>
+        }
+
+        <div class="shared-photo-note">
+            <span>i</span>
+            <p>Only photos approved for customer viewing are shown here. Internal job photos remain private.</p>
+        </div>
+    </div>
+}
+
+@if (SelectedPhoto is not null)
+{
+    <div class="photo-lightbox" @onclick="ClosePhoto">
+        <div class="photo-lightbox-card" @onclick:stopPropagation="true">
+            <button class="photo-lightbox-close" @onclick="ClosePhoto" aria-label="Close photo">×</button>
+            <div class="photo-lightbox-image"><img src="@SelectedPhoto.Url" alt="@SelectedPhoto.Title" /></div>
+            <div class="photo-lightbox-copy">
+                <div class="photo-lightbox-meta">
+                    <span>@SelectedPhoto.Category</span>
+                    <span>@SelectedPhoto.DateTime.ToString("d MMMM yyyy · HH:mm")</span>
+                </div>
+                <h2>@SelectedPhoto.Title</h2>
+                <p>@SelectedPhoto.Description</p>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private CustomerRepair? CurrentRepair { get; set; }
+    private readonly string[] Categories = ["All", "Survey", "Parts", "Fitting", "Completed"];
+    private string SelectedCategory { get; set; } = "All";
+    private CustomerPhoto? SelectedPhoto { get; set; }
+    private bool Loading { get; set; } = true;
+
+    private List<CustomerPhoto> VisiblePhotos => CurrentRepair is null
+        ? []
+        : SelectedCategory == "All"
+            ? CurrentRepair.Photos.OrderByDescending(x => x.DateTime).ToList()
+            : CurrentRepair.Photos.Where(x => x.Category == SelectedCategory).OrderByDescending(x => x.DateTime).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.RestoreAsync();
+        if (!Session.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/", replace: true);
+            return;
+        }
+
+        try
+        {
+            CurrentRepair = await RepairState.GetAsync();
+
+            if (!Session.IsLoggedIn)
+            {
+                Navigation.NavigateTo("/", replace: true);
+                return;
+            }
+
+            if (CurrentRepair is not null)
+            {
+                foreach (var photo in CurrentRepair.Photos)
+                {
+                    photo.Url =
+                        await Api.GetCustomerImageAsync(photo.Url)
+                        ?? string.Empty;
+                }
+            }
+        }
+        finally
+        {
+            Loading = false;
+        }
+    }
+
+    private void OpenPhoto(CustomerPhoto photo) => SelectedPhoto = photo;
+    private void ClosePhoto() => SelectedPhoto = null;
+}

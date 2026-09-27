@@ -1,0 +1,367 @@
+@page "/contact"
+@inject CustomerSessionService Session
+@inject CustomerRepairState RepairState
+@inject CustomerApiService Api
+@inject NavigationManager Navigation
+
+<div class="customer-page sub-page contact-page">
+    <div class="page-kicker">NEED HELP?</div>
+    <h1>Contact</h1>
+    <p class="page-intro">Send a message to the team handling your repair.</p>
+
+    @if (Loading)
+    {
+        <div class="loading-card">Loading your messages…</div>
+    }
+    else if (Repair is null)
+    {
+        <section class="simple-card">
+            <h2>No repair available</h2>
+            <p>There is no repair currently linked to this account.</p>
+        </section>
+    }
+    else if (SelectedTicket is not null)
+    {
+        <section class="contact-card ticket-conversation-card">
+            <div class="repair-heading-row">
+
+                <div>
+                    <div class="contact-card-label">CUSTOMER CONTACT</div>
+                    <h2>@SelectedTicket.Subject</h2>
+
+                    <div class="ticket-status @TicketStatusClass(SelectedTicket.Status)">
+                        @TicketStatusText(SelectedTicket.Status)
+                    </div>
+                </div>
+
+                <div class="header-actions">
+                    <button type="button"
+                            class="profile-circle profile-button contract-pill"
+                            @onclick="CloseTicket"
+                            title="Back to messages">
+                        &#x276E;&nbsp; Back
+                    </button>
+                </div>
+
+            </div>
+
+            <div class="ticket-thread">
+                @foreach (var message in SelectedTicket.Messages.OrderBy(x => x.Created))
+                {
+                    <div class="ticket-message @(message.Sender == TicketMessageSender.Customer ? "customer-message" : "office-message")">
+                        <div class="ticket-message-sender">
+                            @if (message.Sender == TicketMessageSender.Customer)
+                            {
+                                <text>You</text>
+                            }
+                            else
+                            {
+                                @(string.IsNullOrWhiteSpace(message.SenderName)
+                                    ? "Glass Ops"
+                                    : message.SenderName)
+                            }
+                        </div>
+                        <div class="ticket-message-body">@message.Message</div>
+                        <div class="ticket-message-time">@message.Created.ToLocalTime().ToString("d MMM yyyy · HH:mm")</div>
+                    </div>
+                }
+            </div>
+
+            @if (SelectedTicket.Status != TicketStatus.Closed)
+            {
+                <div class="ticket-reply-box">
+                    <label for="ticketReply">Reply</label>
+                    <textarea id="ticketReply"
+                              class="contact-textarea"
+                              rows="4"
+                              placeholder="Type your reply..."
+                              @bind="ReplyMessage"></textarea>
+
+                    @if (!string.IsNullOrWhiteSpace(ReplyError))
+                    {
+                        <div class="contact-error">@ReplyError</div>
+                    }
+
+                    <button type="button"
+                            class="primary-button"
+                            disabled="@SendingReply"
+                            @onclick="SendReplyAsync">
+                        @(SendingReply ? "Sending..." : "Send reply")
+                    </button>
+                </div>
+            }
+            else
+            {
+                <div class="ticket-closed-note">This conversation has been closed.</div>
+            }
+        </section>
+    }
+    else
+    {
+        @if (Tickets.Count > 0)
+        {
+            <section class="contact-history">
+                <div class="section-title">Your messages</div>
+
+                @foreach (var ticket in Tickets)
+                {
+                    <button type="button" class="ticket-list-card" @onclick="() => OpenTicketAsync(ticket.Id)">
+                        <div class="ticket-list-main">
+                            <div class="ticket-list-title-row">
+                                <strong>@ticket.Subject</strong>
+                                @if (ticket.HasUnreadMessages)
+                                {
+                                    <span class="unread-dot" title="New reply"></span>
+                                }
+                            </div>
+
+                            <div class="ticket-list-meta">
+                                <span class="ticket-status @TicketStatusClass(ticket.Status)">@TicketStatusText(ticket.Status)</span>
+                                <span>@ticket.MessageCount @(ticket.MessageCount == 1 ? "message" : "messages")</span>
+                            </div>
+                        </div>
+
+                        <div class="ticket-list-date">
+                            @FormatTicketDate(ticket.LastMessageDate ?? ticket.Created)
+                            <span class="ticket-chevron">›</span>
+                        </div>
+                    </button>
+                }
+            </section>
+        }
+
+        <section class="contact-card">
+            <div class="contact-card-label">NEW MESSAGE</div>
+            <h2>How can we help?</h2>
+            <p class="contact-muted">Your message will be attached to repair <strong>@Repair.Reference</strong>.</p>
+
+            <div class="contact-field">
+                <label for="ticketSubject">Subject</label>
+                <input id="ticketSubject"
+                       class="contact-input"
+                       maxlength="200"
+                       placeholder="What is your message about?"
+                       @bind="Subject" />
+            </div>
+
+            <div class="contact-field">
+                <label for="ticketMessage">Message</label>
+                <textarea id="ticketMessage"
+                          class="contact-textarea"
+                          rows="5"
+                          placeholder="Tell us how we can help..."
+                          @bind="Message"></textarea>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(SendMessage))
+            {
+                <div class="@(SendSuccess ? "contact-success" : "contact-error")">@SendMessage</div>
+            }
+
+            <button type="button"
+                    class="primary-button"
+                    disabled="@Sending"
+                    @onclick="CreateTicketAsync">
+                @(Sending ? "Sending..." : "Send message")
+            </button>
+        </section>
+    }
+</div>
+<style>
+    .contract-pill {
+        width: auto;
+        min-width: 90px;
+        padding-left: 16px;
+        padding-right: 16px;
+        border-radius: 999px;
+        white-space: nowrap;
+    }
+
+</style>
+@code {
+    private CustomerRepair? Repair;
+    private List<CustomerTicketListItem> Tickets = [];
+    private CustomerTicket? SelectedTicket;
+
+    private bool Loading = true;
+    private bool Sending;
+    private bool SendingReply;
+    private bool SendSuccess;
+
+    private string Subject = "";
+    private string Message = "";
+    private string SendMessage = "";
+    private string ReplyMessage = "";
+    private string ReplyError = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.RestoreAsync();
+
+        if (!Session.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/", replace: true);
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        Loading = true;
+
+        try
+        {
+            Repair = await RepairState.GetAsync();
+            Tickets = await Api.GetTicketsAsync();
+
+            if (!Session.IsLoggedIn)
+                Navigation.NavigateTo("/", replace: true);
+        }
+        finally
+        {
+            Loading = false;
+        }
+    }
+
+    private async Task CreateTicketAsync()
+    {
+        if (Repair is null || Sending)
+            return;
+
+        SendMessage = "";
+        SendSuccess = false;
+
+        if (string.IsNullOrWhiteSpace(Subject))
+        {
+            SendMessage = "Please enter a subject.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(Message))
+        {
+            SendMessage = "Please enter a message.";
+            return;
+        }
+
+        Sending = true;
+
+        try
+        {
+            var result = await Api.CreateTicketAsync(Repair.ContractId, Subject, Message);
+
+            SendSuccess = result.Success;
+            SendMessage = result.Message;
+
+            if (!result.Success)
+            {
+                if (!Session.IsLoggedIn)
+                    Navigation.NavigateTo("/", replace: true);
+                return;
+            }
+
+            Subject = "";
+            Message = "";
+            Tickets = await Api.GetTicketsAsync();
+
+            if (result.TicketId > 0)
+                await OpenTicketAsync(result.TicketId);
+        }
+        finally
+        {
+            Sending = false;
+        }
+    }
+
+    private async Task OpenTicketAsync(int ticketId)
+    {
+        var ticket = await Api.GetTicketAsync(ticketId);
+
+        if (ticket is null)
+        {
+            if (!Session.IsLoggedIn)
+                Navigation.NavigateTo("/", replace: true);
+            return;
+        }
+
+        SelectedTicket = ticket;
+        ReplyMessage = "";
+        ReplyError = "";
+        Tickets = await Api.GetTicketsAsync();
+    }
+
+    private void CloseTicket()
+    {
+        SelectedTicket = null;
+        ReplyMessage = "";
+        ReplyError = "";
+    }
+
+    private async Task SendReplyAsync()
+    {
+        if (SelectedTicket is null || SendingReply)
+            return;
+
+        ReplyError = "";
+
+        if (string.IsNullOrWhiteSpace(ReplyMessage))
+        {
+            ReplyError = "Please enter a reply.";
+            return;
+        }
+
+        SendingReply = true;
+
+        try
+        {
+            var result = await Api.ReplyToTicketAsync(SelectedTicket.Id, ReplyMessage);
+
+            if (!result.Success)
+            {
+                ReplyError = result.Message;
+                if (!Session.IsLoggedIn)
+                    Navigation.NavigateTo("/", replace: true);
+                return;
+            }
+
+            ReplyMessage = "";
+            SelectedTicket = await Api.GetTicketAsync(SelectedTicket.Id);
+            Tickets = await Api.GetTicketsAsync();
+        }
+        finally
+        {
+            SendingReply = false;
+        }
+    }
+
+    private static string TicketStatusText(TicketStatus status) => status switch
+    {
+        TicketStatus.AwaitingOffice => "Waiting for Glass Ops",
+        TicketStatus.AwaitingCustomer => "Waiting for you",
+        TicketStatus.Closed => "Closed",
+        _ => "Open"
+    };
+
+    private static string TicketStatusClass(TicketStatus status) => status switch
+    {
+        TicketStatus.AwaitingOffice => "waiting-office",
+        TicketStatus.AwaitingCustomer => "waiting-customer",
+        TicketStatus.Closed => "closed",
+        _ => "open"
+    };
+
+    private static string FormatTicketDate(DateTime value)
+    {
+        var local = value.ToLocalTime();
+        var today = DateTime.Today;
+
+        if (local.Date == today)
+            return local.ToString("HH:mm");
+
+        if (local.Date == today.AddDays(-1))
+            return "Yesterday";
+
+        return local.ToString("d MMM");
+    }
+}

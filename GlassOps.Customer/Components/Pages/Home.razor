@@ -1,0 +1,201 @@
+@page "/home"
+@inject CustomerSessionService Session
+@inject CustomerRepairState RepairState
+@inject NavigationManager Navigation
+
+@if (Loading)
+{
+    <div class="customer-page"><div class="loading-card">Loading your repair…</div></div>
+}
+else if (!string.IsNullOrWhiteSpace(ErrorMessage))
+{
+    <div class="customer-page">
+        <section class="simple-card">
+            <h2>Unable to load repair</h2>
+            <p>@ErrorMessage</p>
+            <button class="primary-button" @onclick="LoadAsync">Try again</button>
+        </section>
+    </div>
+}
+else if (Repair is null)
+{
+    <div class="customer-page">
+        <header class="top-bar">
+            <div>
+                <div class="brand">GLASS OPS</div>
+                <div class="welcome">Welcome back</div>
+                <h1>@FirstName</h1>
+            </div>
+            <div class="header-actions">
+
+                <button class="profile-circle profile-button"
+                        @onclick="OpenAccount"
+                        title="Account">
+                    @Initials
+                </button>
+
+            </div>
+        </header>
+        <section class="simple-card empty-card">
+            <div class="empty-icon">◇</div>
+            <h2>No repair available</h2>
+            <p>There is no repair currently linked to this account.</p>
+        </section>
+    </div>
+}
+else
+{
+    <div class="customer-page">
+
+        <header class="top-bar">
+            <div>
+                <div class="brand">GLASS OPS</div>
+                <div class="welcome">Welcome back</div>
+                <h1>@FirstName</h1>
+            </div>
+
+            <div class="header-actions">
+
+                <button class="profile-circle profile-button"
+                        @onclick="OpenAccount"
+                        title="Account">
+                    @Initials
+                </button>
+
+            </div>
+        </header>
+
+        <section class="repair-card">
+            <div class="repair-label">YOUR REPAIR</div>
+            <h2>@Repair.AddressLine1</h2>
+            <div class="location">@Repair.Town · @Repair.Postcode</div>
+
+            <div class="timeline" aria-label="Repair progress">
+                @for (var i = 0; i < Stages.Length; i++)
+                {
+                    var stageIndex = i;
+                    <div class="timeline-stage @StageClass(stageIndex) stage-@(stageIndex + 1)">
+                        <div class="timeline-dot">
+                            <span>@(stageIndex < CurrentStage ? "✓" : "")</span>
+                        </div>
+                        <span>@Stages[stageIndex]</span>
+                    </div>
+
+                    if (stageIndex < Stages.Length - 1)
+                    {
+                        <div class="timeline-line @(stageIndex < CurrentStage ? "complete" : "") line-@(stageIndex + 1)">
+                            <span></span>
+                        </div>
+                    }
+                }
+            </div>
+
+            <div class="status-panel">
+                <div class="status-caption">CURRENT STATUS</div>
+                <div class="status-title">@Repair.StatusTitle</div>
+                <div class="status-description">@Repair.StatusDescription</div>
+                @if (!string.IsNullOrWhiteSpace(Repair.StatusEta))
+                {
+                    <div class="status-date">@Repair.StatusEta</div>
+                }
+            </div>
+
+            <a class="primary-button" href="repair">View repair</a>
+        </section>
+
+        @if (LatestUpdate is not null)
+        {
+            <section class="latest-update">
+                <div class="section-title">Latest update</div>
+
+                <div class="update-card">
+                    <div class="update-icon">✓</div>
+                    <div>
+                        <strong>@LatestUpdate.Title</strong>
+                        <p>@LatestUpdate.Description</p>
+                        <span class="update-time">@LatestUpdate.DateTime.ToString("d MMMM · HH:mm")</span>
+                    </div>
+                </div>
+            </section>
+        }
+    </div>
+}
+
+@code {
+    private CustomerRepair? Repair { get; set; }
+    private bool Loading { get; set; } = true;
+    private string ErrorMessage { get; set; } = "";
+    private readonly string[] Stages =
+        ["Reported", "Survey", "Fitting", "Complete"];
+
+    private int CurrentStage => Repair is null ? 0 : Repair.Status switch
+    {
+        ContractStatus.Reported => 0,
+
+        ContractStatus.SurveyBooked => 1,
+        ContractStatus.SurveyCompleted => 1,
+
+        ContractStatus.FittingBooked => 2,
+        ContractStatus.FittingCompleted => 3,
+
+        ContractStatus.Cancelled => 0,
+
+        _ => 0
+    };
+
+    private CustomerRepairUpdate? LatestUpdate => Repair?.Updates.OrderByDescending(x => x.DateTime).FirstOrDefault();
+    private string FirstName => (Session.CustomerName ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "Customer";
+    private string Initials => string.Concat((Session.CustomerName ?? "Customer").Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(x => char.ToUpperInvariant(x[0])));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.RestoreAsync();
+        if (!Session.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/", replace: true);
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        Loading = true;
+        ErrorMessage = "";
+        try
+        {
+            Repair = await RepairState.GetAsync(forceRefresh: true);
+            if (!Session.IsLoggedIn)
+                Navigation.NavigateTo("/", replace: true);
+        }
+        catch
+        {
+            ErrorMessage = "We couldn't retrieve your repair information. Please try again.";
+        }
+        finally
+        {
+            Loading = false;
+        }
+    }
+
+    private string StageClass(int index)
+    {
+        if (index < CurrentStage) return "complete";
+        if (index == CurrentStage) return "active";
+        return "";
+    }
+
+    private void OpenAccount()
+    {
+        Navigation.NavigateTo("/account");
+    }
+
+    private void Logout()
+    {
+        RepairState.Clear();
+        Session.Logout();
+        Navigation.NavigateTo("/", replace: true);
+    }
+
+}

@@ -1,0 +1,122 @@
+@page "/"
+@inject CustomerApiService Api
+@inject CustomerSessionService Session
+@inject NavigationManager Navigation
+
+<div class="login-page">
+    <section class="login-card">
+        <div class="login-brand-mark"><img src="images/splash.png" alt="Glass Ops" /></div>
+        <div class="login-brand">GLASS OPS</div>
+        <h1>Track your repair</h1>
+        <p class="login-intro">Sign in to see progress, appointments and updates for work at your property.</p>
+
+        <EditForm Model="Logins" OnValidSubmit="SignInAsync" FormName="customer-login">
+            <DataAnnotationsValidator />
+
+           <!-- Leave out for now <div class="login-field">
+                <label for="tenantCode">Company code</label>
+                <InputText id="tenantCode" class="login-input" @bind-Value="Logins.TenantCode" autocomplete="organization" />
+            </div>-->
+            <div class="login-field">
+                <label for="reference">Reference</label>
+
+                <InputText id="reference"
+                           class="login-input"
+                           @bind-Value="Logins.Reference"
+                           autocomplete="off"
+                           inputmode="numeric"
+                           maxlength="8" />
+            </div>
+
+            <div class="login-field">
+                <label for="email">Email address</label>
+                <InputText id="email" class="login-input" @bind-Value="Logins.Email" autocomplete="email" inputmode="email" />
+            </div>
+
+            <div class="login-field">
+    <label for="password">Password</label>
+
+    <div class="password-input">
+        <InputText id="password"
+                   type="@(ShowPassword ? "text" : "password")"
+                   class="login-input"
+                   @bind-Value="Logins.Password"
+                   autocomplete="current-password" />
+
+        <button type="button"
+        class="password-toggle"
+        @onclick="TogglePassword"
+        title="@(ShowPassword ? "Hide password" : "Show password")">
+    @(ShowPassword ? "Hide" : "Show")
+</button>
+    </div>
+</div>
+
+            @if (!string.IsNullOrWhiteSpace(ErrorMessage))
+            {
+                <div class="login-error">@ErrorMessage</div>
+            }
+
+            <button class="primary-button login-button" type="submit" disabled="@Busy">
+                @(Busy ? "Signing in…" : "Sign in")
+            </button>
+        </EditForm>
+
+        <div class="login-footnote">Your company will provide your Glass Ops login details.</div>
+    </section>
+</div>
+
+@code {
+    private LoginModel Logins { get; } = new();
+    private bool Busy { get; set; }
+    private string ErrorMessage { get; set; } = "";
+
+    private bool ShowPassword { get; set; }
+
+private void TogglePassword()
+{
+    ShowPassword = !ShowPassword;
+}
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.RestoreAsync();
+
+        if (Session.IsLoggedIn)
+            Navigation.NavigateTo("/home", replace: true);
+    }
+
+    private async Task SignInAsync()
+    {
+        Busy = true;
+        ErrorMessage = "";
+
+        var result = await Api.LoginAsync(
+                                Logins.Reference,
+                                Logins.Email,
+                                Logins.Password);
+
+        Busy = false;
+
+        if (!result.Success)
+        {
+            ErrorMessage = result.Message;
+            return;
+        }
+
+        Navigation.NavigateTo("/home", replace: true);
+    }
+
+    private sealed class LoginModel
+    {
+        [System.ComponentModel.DataAnnotations.Required]
+        public string Reference { get; set; } = "";
+
+        [System.ComponentModel.DataAnnotations.Required]
+        [System.ComponentModel.DataAnnotations.EmailAddress]
+        public string Email { get; set; } = "";
+
+        [System.ComponentModel.DataAnnotations.Required]
+        public string Password { get; set; } = "";
+    }
+}

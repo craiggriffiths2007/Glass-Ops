@@ -1,0 +1,162 @@
+@page "/repair"
+@inject CustomerSessionService Session
+@inject CustomerRepairState RepairState
+@inject NavigationManager Navigation
+
+@if (Loading)
+{
+    <div class="customer-page"><div class="loading-card">Loading repair details…</div></div>
+}
+else if (CurrentRepair is not null)
+{
+    <div class="customer-page repair-detail-page">
+        <div class="page-kicker">YOUR REPAIR</div>
+
+        <div class="repair-heading-row">
+            <div>
+                <h1>@CurrentRepair.AddressLine1</h1>
+                <div class="repair-address">@CurrentRepair.Town · @CurrentRepair.Postcode</div>
+            </div>
+
+            <div class="header-actions">
+
+                <button class="profile-circle profile-button contract-pill"
+                        title="Contract">
+                    @CurrentRepair.Reference
+                </button>
+
+            </div>
+
+          
+        </div>
+
+        <section class="repair-hero-card">
+            <div class="repair-hero-glow"></div>
+            <div class="status-caption">CURRENT STATUS</div>
+            <h2>@CurrentRepair.StatusTitle</h2>
+            <p>@CurrentRepair.StatusDescription</p>
+            @if (!string.IsNullOrWhiteSpace(CurrentRepair.StatusEta))
+            {
+                <div class="repair-eta">@CurrentRepair.StatusEta</div>
+            }
+        </section>
+
+        @if (CurrentRepair.NextAppointment is not null)
+        {
+            <section class="detail-section">
+                <div class="section-heading-row">
+                    <div>
+                        <div class="section-eyebrow">NEXT APPOINTMENT</div>
+                        <h2>@CurrentRepair.NextAppointment.Type</h2>
+                    </div>
+                    <div class="calendar-chip">
+                        <strong>@CurrentRepair.NextAppointment.DateTime.ToString("dd")</strong>
+                        <span>@CurrentRepair.NextAppointment.DateTime.ToString("MMM").ToUpperInvariant()</span>
+                    </div>
+                </div>
+
+                <div class="appointment-card">
+                    <div class="appointment-time">
+                        <span class="appointment-icon">⌚</span>
+                        <div>
+                            <strong>@CurrentRepair.NextAppointment.DateTime.ToString("dddd d MMMM")</strong>
+                            <span>@CurrentRepair.NextAppointment.DateTime.ToString("HH:mm")</span>
+                        </div>
+                    </div>
+                    <div class="appointment-divider"></div>
+                    <div class="appointment-detail">
+                        <span>Agent</span>
+                        <strong>@CurrentRepair.NextAppointment.EngineerName</strong>
+                    </div>
+                    <p>@CurrentRepair.NextAppointment.Notes</p>
+                </div>
+            </section>
+        }
+
+        @if (CurrentRepair.Items.Count > 0)
+        {
+            <section class="detail-section">
+                <div class="section-eyebrow">WORK BEING CARRIED OUT</div>
+                <h2>Repair items</h2>
+
+                <div class="repair-items-list">
+                    @foreach (var item in CurrentRepair.Items)
+                    {
+                        <article class="repair-item-card">
+                            <div class="repair-item-icon">◇</div>
+                            <div>
+                                <div class="repair-item-location">@item.Location</div>
+                                <h3>@item.Title</h3>
+                                <p>@item.Description</p>
+                            </div>
+                        </article>
+                    }
+                </div>
+            </section>
+        }
+
+        <section class="detail-section history-section">
+            <div class="section-eyebrow">REPAIR HISTORY</div>
+            <h2>What has happened</h2>
+
+            @if (CurrentRepair.Updates.Count == 0)
+            {
+                <div class="simple-card"><p>Updates about your repair will appear here.</p></div>
+            }
+            else
+            {
+                <div class="vertical-timeline">
+                    @foreach (var update in CurrentRepair.Updates.OrderByDescending(x => x.DateTime))
+                    {
+                        <article class="history-entry @(update.IsCurrent ? "current" : "")">
+                            <div class="history-marker"><span></span></div>
+                            <div class="history-content">
+                                <div class="history-date">@update.DateTime.ToString("d MMMM · HH:mm")</div>
+                                <h3>@update.Title</h3>
+                                <p>@update.Description</p>
+                            </div>
+                        </article>
+                    }
+                </div>
+            }
+        </section>
+
+        <a class="secondary-button" href="photos">View repair photos</a>
+    </div>
+}
+<style>
+    .contract-pill {
+        width: auto;
+        min-width: 90px;
+        padding-left: 16px;
+        padding-right: 16px;
+        border-radius: 999px;
+        white-space: nowrap;
+    }
+
+</style>
+@code {
+    private CustomerRepair? CurrentRepair { get; set; }
+    private bool Loading { get; set; } = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.RestoreAsync();
+        if (!Session.IsLoggedIn)
+        {
+            Navigation.NavigateTo("/", replace: true);
+            return;
+        }
+
+        try
+        {
+            CurrentRepair = await RepairState.GetAsync();
+            if (!Session.IsLoggedIn)
+                Navigation.NavigateTo("/", replace: true);
+        }
+        finally
+        {
+            Loading = false;
+        }
+    }
+}
